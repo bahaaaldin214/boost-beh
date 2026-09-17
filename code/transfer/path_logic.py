@@ -5,13 +5,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 class PathLogic:
 
     def __init__(self, system):
-        if system == 'local':
-            self.base_path = "/mnt/lss/Projects/BOOST"
+        # Prefer env so vosslink / Windows / Argon mounts work without code edits.
+        # Default = Voss lab Linux LSS (not the stale /mnt/lss shortcut).
+        # Windows example: BOOST_LSS_ROOT=Z:\Projects\BOOST
+        self.base_path = os.environ.get(
+            "BOOST_LSS_ROOT", "/mnt/nfs/lss/vosslabhpc/Projects/BOOST"
+        )
         self.sites = ["UI", "NE"]
         self.studies = ["int", "obs"]
         self.obs_path = os.path.join(self.base_path, "ObservationalStudy/3-Experiment/data")
         self.int_path = os.path.join(self.base_path, "InterventionStudy/3-Experiment/data")
         self.data_path = "../../data"  # source root
+        self.system = system
 
     # ---------- helpers ----------
     @staticmethod

@@ -30,7 +30,25 @@ jobs:
           python -m pip install flake8 pytest
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+      - name: Refresh pbsjatos studyId map
+        env:
+          JATOS_TOKEN: ${{ secrets.JATOS_TOKEN || secrets.TOKEN }}
+          JATOS_BASE_URL: ${{ vars.JATOS_BASE_URL || 'https://pbsjatos.psychology.uiowa.edu' }}
+        run: |
+          python scripts/refresh_jatos_ids.py
+
       - name: Run Python script
+        env:
+          # Prefer JATOS_TOKEN; fall back to legacy repo secret TOKEN if present.
+          JATOS_TOKEN: ${{ secrets.JATOS_TOKEN || secrets.TOKEN }}
+          JATOS_BASE_URL: ${{ vars.JATOS_BASE_URL || 'https://pbsjatos.psychology.uiowa.edu' }}
+          JATOS_LEGACY_TOKEN: ${{ secrets.JATOS_LEGACY_TOKEN || secrets.JATOS_TOKEN_LEGACY_ZAK }}
+          JATOS_LEGACY_BASE_URL: ${{ vars.JATOS_LEGACY_BASE_URL || 'https://jatos.psychology.uiowa.edu' }}
+          JATOS_LEGACY_PULL: ${{ vars.JATOS_LEGACY_PULL || '0' }}
+          JATOS_LEGACY_DAYS_AGO: ${{ vars.JATOS_LEGACY_DAYS_AGO || '2000' }}
+          JATOS_DAYS_AGO: ${{ vars.JATOS_DAYS_AGO || '400' }}
+          JATOS_DISCOVER_IDS: ${{ vars.JATOS_DISCOVER_IDS || '1' }}
+          TEASE: ${{ secrets.TEASE }}
         run: |
           python code/main_handler.py all
 

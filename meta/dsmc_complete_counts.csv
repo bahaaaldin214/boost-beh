@@ -1,7 +1,7 @@
 dataset,session,complete_subjects
-int,ses-1,104
-int,ses-2,62
-int,ses-3,38
+int,ses-1,110
+int,ses-2,64
+int,ses-3,41
 int,ses-33,0
 obs,ses-1,268
 obs,ses-1111,0

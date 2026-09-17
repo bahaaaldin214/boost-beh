@@ -1,4 +1,12 @@
+import os
 import warnings
+
+from jatos_study_ids import (
+    handler_ids_from_titles,
+    legacy_obs_ids_for_task,
+    migration_status,
+    refresh_discovered,
+)
 from data_processing.meta import META_RECREATE
 from data_processing.pull_handler import Pull
 from data_processing.cc_qc import CCqC
@@ -17,21 +25,20 @@ warnings.filterwarnings("ignore")
 class Handler:
 
     def __init__(self):
-        self.IDs = {
-            "AF": [945, 960, 990, 898, 919, 932],
-            "ATS": [947, 961, 984, 918, 920, 933],
-            "DSST": [949, 975, 986, 901, 959, 935],
-            "DWL": [948, 974, 985, 900, 921, 934],
-            "FN": [950, 964, 987, 902, 923, 936],
-            "LC": [951, 976, 988, 903, 924, 937],
-            "NF": [980, 981, 982, 978, 979, 977],
-            "NNB": [946, 967, 989, 905, 929, 939],
-            "NTS": [953, 968, 991, 906, 930, 940],
-            "PC": [954, 969, 992, 912, 925, 941],
-            "SM": [955, 970, 993, 916, 926, 996],
-            "VNB": [957, 971, 994, 915, 928, 943],
-            "WL": [958, 972, 995, 910, 927, 944]
-        }
+        self._pbs_titles = refresh_discovered()
+        self.IDs = handler_ids_from_titles(self._pbs_titles)
+        status = migration_status(self._pbs_titles)
+        cprint(
+            f"pbsjatos studies: {status['n_present']}/{status['n_expected']} "
+            f"(OBS missing: {status['n_missing_obs']})",
+            "cyan",
+        )
+        if status["n_missing_obs"]:
+            cprint(
+                "OBS OA/OB/OC not fully on pbsjatos — "
+                "nightly uses legacy server when JATOS_LEGACY_TOKEN is set",
+                "yellow",
+            )
 
         self._meta_recreator = META_RECREATE()
         self._meta_rebuild_pending = False
@@ -80,15 +87,60 @@ class Handler:
         self._meta_rebuild_pending = False
 
     def pull(self, task):
-        pull_instance = Pull(
-            self.IDs[task],
-            tease="WEEEEEEEEEEEEEE",
-            token="jap_5ThOJ14yf7z1EPEUpAoZYMWoETZcmJk305719",
-            taskName=task,
-            proxy=False
+        token = os.environ.get("JATOS_TOKEN", "").strip()
+        if not token:
+            raise RuntimeError(
+                "JATOS_TOKEN env var required (see HBC .env/.env). "
+                "Do not hardcode tokens in source."
+            )
+        tease = os.environ.get("TEASE", "")
+        proxy = os.environ.get("JATOS_PROXY", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
         )
+        days_ago = int(os.environ.get("JATOS_DAYS_AGO", "127"))
+        txt_dfs = []
 
-        txt_dfs = pull_instance.load(days_ago=127)
+        pbs_ids = self.IDs.get(task, [])
+        if pbs_ids:
+            pull_pbs = Pull(
+                pbs_ids,
+                tease=tease,
+                token=token,
+                taskName=task,
+                proxy=proxy,
+                base_url=os.environ.get("JATOS_BASE_URL"),
+            )
+            txt_dfs.extend(pull_pbs.load(days_ago=days_ago) or [])
+
+        legacy_pull = os.environ.get("JATOS_LEGACY_PULL", "0").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        legacy_token = os.environ.get("JATOS_LEGACY_TOKEN", "").strip()
+        legacy_obs_ids = legacy_obs_ids_for_task(task, set(self._pbs_titles))
+        if legacy_pull and legacy_token and legacy_obs_ids:
+            legacy_base = os.environ.get(
+                "JATOS_LEGACY_BASE_URL", "https://jatos.psychology.uiowa.edu"
+            )
+            legacy_days = int(os.environ.get("JATOS_LEGACY_DAYS_AGO", "2000"))
+            cprint(
+                f"legacy OBS pull {task}: studyIds={legacy_obs_ids} "
+                f"days_ago={legacy_days}",
+                "yellow",
+            )
+            pull_legacy = Pull(
+                legacy_obs_ids,
+                tease=tease,
+                token=legacy_token,
+                taskName=task,
+                proxy=proxy,
+                base_url=legacy_base,
+            )
+            txt_dfs.extend(pull_legacy.load(days_ago=legacy_days) or [])
+
         return self.convert_to_csv(txt_dfs, task)
 
     def convert_to_csv(self, txt_dfs, task):
